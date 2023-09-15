@@ -6,10 +6,22 @@ import { Textarea } from "./ui/textarea";
 import { ChangeEvent, FormEvent, useMemo, useRef, useState } from "react";
 import { getFFmpeg } from "@/lib/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
+import { api } from "@/lib/axios";
 
-export default function VideoInputForm() {
+type Status = 'waiting' | 'converting' | 'uploading' | 'generating' | 'success'
+
+const statusMessages = {
+    'waiting': 'Carregar vídeo',
+    'converting': 'Convertendo...',
+    'uploading': 'Carregando...',
+    'generating': 'Transcrevendo...',
+    'success': 'Concluído'
+}
+
+export default function VideoInputForm({ onVideoUploaded: setVideoId }: { onVideoUploaded: (videoId: string | null) => void }) {
 
     const [videoFile, setVideoFile] = useState<File | null>(null)
+    const [status, setStatus] = useState<Status>('waiting')
     const promptRef = useRef<HTMLTextAreaElement>(null)
 
     const previewURL = useMemo(() => {
@@ -65,8 +77,21 @@ export default function VideoInputForm() {
 
         if (!videoFile) return
 
+        setStatus('converting')
         const audioFile = await convertVideoToAudio(videoFile)
-        console.log(prompt)
+
+        setStatus('uploading')
+        const data = new FormData()
+        data.append('file', audioFile)
+        const response = await api.post('/videos', data)
+
+        setStatus('generating')
+        const videoId = response.data.id
+        const transcript = await api.post('/videos/' + videoId + '/transcript', { prompt })
+
+        console.log(transcript.data)
+        setVideoId(videoId)
+        setStatus('success')
     }
 
     return (
@@ -89,6 +114,7 @@ export default function VideoInputForm() {
             <div className="space-y-1">
                 <Label htmlFor="transc-prompt">Prompt de transcrição</Label>
                 <Textarea
+                    disabled={status !== 'waiting'}
                     ref={promptRef}
                     id="transc-prompt"
                     className="min-h-20"
@@ -96,9 +122,9 @@ export default function VideoInputForm() {
                 ></Textarea>
             </div>
 
-            <Button type="submit" className="w-full">
-                <Upload className="h-4 w-4 mr-2" />
-                Carregar vídeo
+            <Button disabled={status !== 'waiting'} type="submit" className="w-full">
+                {status === 'waiting' && <Upload className="h-4 w-4 mr-2" />}
+                {statusMessages[status]}
             </Button>
 
         </form>
